@@ -1,17 +1,17 @@
-"""Unit tests for the ACP client (:mod:`omnigent.inner.rovo_acp`).
+"""Unit tests for the Rovo ACP client.
 
-These spawn a fake ACP server (``tests/inner/_fake_acp_server.py``) over stdio,
-so they exercise the real subprocess + JSON-RPC framing without needing the
-``acli`` CLI installed.
+These spawn a fake ACP server over stdio, so they exercise the real subprocess
++ JSON-RPC framing without needing the ``acli`` CLI installed.
 """
 
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import pytest
 
-from omnigent.inner.rovo_acp import (
+from omnigent.community.harnesses.rovo.inner.rovo_acp import (
     AcpClient,
     _auto_allow_permission,
     default_acp_command,
@@ -19,7 +19,7 @@ from omnigent.inner.rovo_acp import (
 
 
 def _fake_server_command() -> list[str]:
-    return [sys.executable, "-m", "tests.inner._fake_acp_server"]
+    return [sys.executable, str(Path(__file__).with_name("_fake_acp_server.py"))]
 
 
 def test_default_acp_command_builds_expected_argv() -> None:

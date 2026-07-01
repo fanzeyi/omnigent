@@ -6,8 +6,9 @@ ACP handshake (``initialize``), open a session (``session/new``), send a prompt
 (``session/prompt``), cancel a turn (``session/cancel``), and surface the
 streamed ``session/update`` notifications to a caller-supplied callback.
 
-The higher-level :class:`omnigent.inner.rovo_executor.RovoExecutor` translates
-the raw ACP updates this client yields into Omnigent
+The higher-level
+:class:`omnigent.community.harnesses.rovo.inner.rovo_executor.RovoExecutor`
+translates the raw ACP updates this client yields into Omnigent
 :class:`~omnigent.inner.executor.ExecutorEvent` instances.
 
 Transport shape (framed JSON-RPC, one JSON object per line) mirrors the

@@ -7,7 +7,6 @@ describe("BRAIN_HARNESS_LABELS", () => {
     expect(BRAIN_HARNESS_LABELS["openai-agents"]).toBe("OpenAI Agents SDK");
     expect(BRAIN_HARNESS_LABELS["codex"]).toBe("Codex");
     expect(BRAIN_HARNESS_LABELS["pi"]).toBe("Pi");
-    expect(BRAIN_HARNESS_LABELS["rovo-cli"]).toBe("Rovo Dev");
   });
 
   it("does not include native harnesses", () => {

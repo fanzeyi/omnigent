@@ -1,4 +1,4 @@
-"""Unit tests for :class:`omnigent.inner.rovo_executor.RovoExecutor`.
+"""Unit tests for the Rovo executor.
 
 End-to-end tests drive a fake ACP server over stdio (no ``acli`` needed) and
 assert the ACP ``session/update`` stream is translated into the expected
@@ -8,6 +8,7 @@ assert the ACP ``session/update`` stream is translated into the expected
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -20,11 +21,14 @@ from omnigent.inner.executor import (
     ToolCallStatus,
     TurnComplete,
 )
-from omnigent.inner.rovo_executor import RovoExecutor, _translate_update
+from omnigent.community.harnesses.rovo.inner.rovo_executor import (
+    RovoExecutor,
+    _translate_update,
+)
 
 
 def _fake_server_command() -> list[str]:
-    return [sys.executable, "-m", "tests.inner._fake_acp_server"]
+    return [sys.executable, str(Path(__file__).with_name("_fake_acp_server.py"))]
 
 
 # --- pure translation unit tests -------------------------------------------

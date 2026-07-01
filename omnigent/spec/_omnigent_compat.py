@@ -110,7 +110,6 @@ OMNIGENT_HARNESSES = frozenset(
         "pi-native",
         "qwen",
         "qwen-native",
-        "rovo-cli",
     },
 )
 # User-facing aliases accepted in specs and normalized before runtime dispatch.
@@ -131,7 +130,6 @@ OMNIGENT_HARNESS_ALIASES = frozenset(
         "native-hermes",
         "github-copilot",
         "native-kimi",
-        "rovo",
     }
 )
 _OMNIGENT_ACCEPTED_HARNESSES = OMNIGENT_HARNESSES | OMNIGENT_HARNESS_ALIASES

@@ -1,12 +1,12 @@
-"""Unit tests for the rovo harness factory (:mod:`omnigent.inner.rovo_harness`)."""
+"""Unit tests for the Rovo harness factory."""
 
 from __future__ import annotations
 
 import pytest
 from fastapi import FastAPI
 
-from omnigent.inner import rovo_harness
-from omnigent.inner.rovo_executor import RovoExecutor
+from omnigent.community.harnesses.rovo.inner import rovo_harness
+from omnigent.community.harnesses.rovo.inner.rovo_executor import RovoExecutor
 
 
 def test_create_app_returns_fastapi() -> None:

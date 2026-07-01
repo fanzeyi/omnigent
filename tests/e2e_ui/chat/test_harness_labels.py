@@ -4,7 +4,7 @@ Verifies that ``BRAIN_HARNESS_LABELS`` from ``web/src/lib/agentLabels.ts``
 is bundled into the SPA and used to render human-friendly harness names.
 The test inspects the built JavaScript bundle for the expected label entries
 rather than requiring a live agent session per harness, since most harnesses
-(e.g. ``rovo-cli``) need a CLI binary that CI runners do not have.
+need a CLI binary that CI runners do not have.
 
 This is an SPA build-time correctness check: if a new harness label is added
 to the source map but tree-shaken away or misspelled, this test catches it.
@@ -23,7 +23,6 @@ _BUILD_DIR = _REPO_ROOT / "omnigent" / "server" / "static" / "web-ui"
 @pytest.mark.parametrize(
     "harness_key,expected_label",
     [
-        ("rovo-cli", "Rovo Dev"),
         ("claude-sdk", "Claude SDK"),
         ("openai-agents", "OpenAI Agents SDK"),
         ("codex", "Codex"),
@@ -42,8 +41,8 @@ def test_harness_label_in_built_spa(
     no typo in the source) without needing a live harness session.
 
     :param built_spa: Session-scoped fixture that builds the SPA.
-    :param harness_key: The internal harness identifier, e.g. ``"rovo-cli"``.
-    :param expected_label: The user-facing label, e.g. ``"Rovo Dev"``.
+    :param harness_key: The internal harness identifier, e.g. ``"claude-sdk"``.
+    :param expected_label: The user-facing label, e.g. ``"Claude SDK"``.
     """
     js_files = list(_BUILD_DIR.rglob("*.js"))
     assert js_files, f"No JS files found in {_BUILD_DIR}; SPA build may have failed."

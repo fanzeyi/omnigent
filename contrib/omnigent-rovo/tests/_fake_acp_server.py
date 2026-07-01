@@ -1,8 +1,9 @@
 """A tiny fake ACP server over stdio, used by the rovo harness unit tests.
 
-Run as ``python -m tests.inner._fake_acp_server`` (the tests spawn it via the
-:class:`~omnigent.inner.rovo_acp.AcpClient` command vector). It speaks just
-enough of ACP (JSON-RPC 2.0, newline-framed) to exercise the client/executor:
+The tests spawn this file directly through the
+:class:`~omnigent.community.harnesses.rovo.inner.rovo_acp.AcpClient` command
+vector. It speaks just enough of ACP (JSON-RPC 2.0, newline-framed) to exercise
+the client/executor:
 
 - ``initialize`` → returns a capabilities result.
 - ``session/new`` → returns a ``sessionId`` + ``availableModels``.

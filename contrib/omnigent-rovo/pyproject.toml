@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "omnigent-rovo"
+version = "0.3.0.dev0"
+description = "Rovo Dev community harness plugin for Omnigent"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "omnigent==0.3.0.dev0",
+]
+
+[project.entry-points."omnigent.community.harnesses"]
+rovo = "omnigent.community.harnesses.rovo.plugin:get_contribution"
+
+[tool.uv.sources]
+omnigent = { path = "../..", editable = true }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["omnigent.community.harnesses.rovo*"]
+namespaces = true

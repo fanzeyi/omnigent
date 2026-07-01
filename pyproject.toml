@@ -465,6 +465,9 @@ known-first-party = ["omnigent"]
 "sdks/**/*.py" = [
     "ARG001", "ARG002", "BLE001", "B008", "RUF012",
 ]
+"contrib/**/*.py" = [
+    "ARG001", "ARG002", "BLE001", "B008", "RUF012",
+]
 
 [tool.mypy]
 python_version = "3.12"

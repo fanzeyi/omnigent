@@ -4,8 +4,8 @@ This is the per-harness "translator" in Omnigent's harness architecture. The
 shared :class:`~omnigent.runtime.harnesses._executor_adapter.ExecutorAdapter`
 drives any :class:`~omnigent.inner.executor.Executor`; this subclass implements
 ``run_turn`` by spawning a Rovo Dev ACP session (via
-:class:`~omnigent.inner.rovo_acp.AcpClient`) and translating the streamed ACP
-``session/update`` notifications into Omnigent
+:class:`~omnigent.community.harnesses.rovo.inner.rovo_acp.AcpClient`) and
+translating the streamed ACP ``session/update`` notifications into Omnigent
 :class:`~omnigent.inner.executor.ExecutorEvent` instances.
 
 Event mapping (confirmed against ``acli rovodev acp`` over stdio):
@@ -33,7 +33,7 @@ import logging
 import os
 from collections.abc import AsyncIterator
 
-from .executor import (
+from omnigent.inner.executor import (
     EnqueuedContent,
     Executor,
     ExecutorConfig,

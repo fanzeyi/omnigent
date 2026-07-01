@@ -8,8 +8,9 @@ Rovo Dev CLI. Authored before any implementation, to put the reasoning on record
 
 **Status:** implemented (v1) — pending review
 **Author:** Shubham (with Rovo Dev)
-**Scope:** Add `acli rovodev` as a first-party Omnigent harness (`rovo-cli`,
-alias `rovo`), selectable like `claude-sdk` / `codex` / `pi` / `openai-agents`.
+**Scope:** Package `acli rovodev` as an optional community Omnigent harness
+(`rovo-cli`, alias `rovo`), selectable like built-in harnesses after the
+community package is installed.
 
 > Provenance note: This design is derived from the Omnigent repo itself (the
 > documented harness registry, the `Executor`/`ExecutorAdapter` contract, and the
@@ -39,23 +40,25 @@ collaboration, and multi-agent composition — by selecting a `rovo` harness in:
 
 Three in-repo facts define the entire extension surface:
 
-### 2.1 The harness registry is a documented name→module map
-`omnigent/runtime/harnesses/__init__.py` is, by its own docstring, *"just the
-registry."* It maps the value of `spec.executor.harness` to a module that
-exports a zero-arg `create_app() -> FastAPI`:
+### 2.1 The harness registry resolves a name→module map
+Omnigent maps the value of `spec.executor.harness` to a module that exports a
+zero-arg `create_app() -> FastAPI`. Built-ins are declared by core; community
+harnesses contribute entries through the `omnigent.community.harnesses` entry
+point group:
 
 ```python
-_HARNESS_MODULES: dict[str, str] = {
-    "claude-sdk": "omnigent.inner.claude_sdk_harness",
-    "codex":      "omnigent.inner.codex_harness",
-    "pi":         "omnigent.inner.pi_harness",
-    "codex-native": "omnigent.inner.codex_native_harness",
-    ...
-}
+HarnessContribution(
+    name="rovo",
+    valid_harnesses=frozenset({"rovo-cli"}),
+    aliases={"rovo": "rovo-cli"},
+    harness_modules={
+        "rovo-cli": "omnigent.community.harnesses.rovo.inner.rovo_harness",
+    },
+)
 ```
 The docstring states the contract plainly: *"The harness IS an HTTP service
 speaking the same Pydantic models AP serves to external clients."* So adding a
-harness = add one registry entry pointing at a module with `create_app()`.
+harness = contribute one registry entry pointing at a module with `create_app()`.
 
 ### 2.2 `create_app()` is trivial; all plumbing lives in `ExecutorAdapter`
 Every existing harness factory is ~5 lines. e.g. `codex_native_harness.py`:
@@ -169,12 +172,12 @@ Notable capability findings:
 
 ---
 
-## 5. Implementation (as built, repo-native naming)
+## 5. Implementation (as built, community package naming)
 
 Following the repo's dominant `codex_executor.py` / `codex_harness.py`
-convention (not any external naming):
+convention, but packaged outside the built-in harness set:
 
-### New files (`omnigent/inner/`)
+### New files (`contrib/omnigent-rovo/omnigent/community/harnesses/rovo/`)
 1. **`rovo_acp.py`** — a minimal ACP client over an asyncio subprocess: framed
    JSON-RPC read/write loop, `initialize`, `session/new`, `session/set_model`,
    `session/prompt`, `session/cancel`, and an async iterator of `session/update`
@@ -203,20 +206,26 @@ convention (not any external naming):
    (model, cwd, config-file, site-url, sandbox) + the 5-line `create_app()` =
    `ExecutorAdapter(executor_factory=_build_rovo_executor).build()`.
 
-### Edits
-4. `omnigent/runtime/harnesses/__init__.py` — add
-   `"rovo": "omnigent.inner.rovo_harness"` (and/or `"rovo-cli"`).
-5. `omnigent/harness_aliases.py` — add a user-facing alias if we keep a separate
-   canonical id; do **not** add to `NATIVE_HARNESSES`.
-6. Web-UI harness picker — one line in `ap-web/src/lib/agentLabels.ts`
-   (`"rovo-cli": "Rovo Dev"` in `BRAIN_HARNESS_LABELS`) so `rovo` is selectable in
-   the New-Chat / Switch-Agent fly-out. Verified with `tsc -b` and the picker
-   component tests.
+### Plugin contribution
+4. **`plugin.py`** — returns `HarnessContribution` with:
+   - canonical harness `rovo-cli`,
+   - alias `rovo`,
+   - module `omnigent.community.harnesses.rovo.inner.rovo_harness`,
+   - model env var `HARNESS_ROVO_MODEL`,
+   - spawn-env builder `build_rovo_spawn_env`,
+   - picker/catalog label `Rovo Dev`,
+   - install metadata for the `acli` binary.
+
+The entry point is declared in `contrib/omnigent-rovo/pyproject.toml` under
+`[project.entry-points."omnigent.community.harnesses"]`. Core validates that
+community import paths stay under `omnigent.community.harnesses.*`, so a
+community harness cannot override a built-in harness module path.
 
 ### Config (env-var, mirroring `codex_harness.py`'s `HARNESS_CODEX_*` pattern)
 - `HARNESS_ROVO_MODEL`, `HARNESS_ROVO_CWD`, `HARNESS_ROVO_CONFIG_FILE`
   (default `~/.rovodev/config.yml`), `HARNESS_ROVO_SITE_URL`,
-  `HARNESS_ROVO_PATH` (override `acli` location), sandbox mapping from `os_env`.
+  `HARNESS_ROVO_ACLI_PATH` (override `acli` location), sandbox mapping from
+  `os_env`.
 
 ### Auth
 Rovo auth is handled by the CLI itself (`acli rovodev auth login`, probe shows
@@ -227,21 +236,24 @@ unauthenticated, surface the CLI's guidance as an `ExecutorError`.
 
 ## 6. Tests (matching the repo's bar)
 
-- `tests/inner/test_rovo_acp.py` — handshake / session/new (nested `models`) /
+- `contrib/omnigent-rovo/tests/test_rovo_plugin.py` — contribution metadata, install
+  metadata, and spawn-env model plumbing.
+- `contrib/omnigent-rovo/tests/test_rovo_acp.py` — handshake / session/new (nested `models`) /
   prompt streaming / cancel, against a fake stdio server (no real CLI).
-- `tests/inner/test_rovo_executor.py` — `session/update` → `ExecutorEvent`
+- `contrib/omnigent-rovo/tests/test_rovo_executor.py` — `session/update` → `ExecutorEvent`
   mapping, persistent-session reuse, `stopReason` → `TurnComplete`, permission
   auto-allow, and **model selection** (parse nested models; `config.model` and
   spec-default precedence; config-wins-over-spec; no-model keeps Rovo default).
-- `tests/inner/test_rovo_harness.py` — env-var config flow → executor args.
-- `tests/inner/test_rovo_live_e2e.py` — gated live E2E (simple turn + multi-turn
+- `contrib/omnigent-rovo/tests/test_rovo_harness.py` — env-var config flow → executor args.
+- `contrib/omnigent-rovo/tests/test_rovo_live_e2e.py` — gated live E2E (simple turn + multi-turn
   with tools) that **skips unless `ROVO_LIVE=1`** and `acli` is present, so CI
   without the CLI stays green.
-- `tests/inner/_fake_acp_server.py` — the fake stdio ACP server backing the unit
-  tests (returns the real nested `models` shape; handles `session/set_model`).
+- `contrib/omnigent-rovo/tests/_fake_acp_server.py` — the fake stdio ACP server backing the
+  unit tests (returns the real nested `models` shape; handles
+  `session/set_model`).
 
-Local gate before PR: `uv run pre-commit run --all-files` (ruff) and, since the
-picker touches the frontend, `cd ap-web && npm run build` / `tsc -b`.
+Local gate before PR: run the core harness-plugin tests plus the Rovo package
+tests. The live E2E remains opt-in because it needs an authenticated `acli`.
 
 ---
 

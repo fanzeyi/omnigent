@@ -8,8 +8,8 @@ resolves ``"rovo"`` to this module via
 
 Internally instantiates
 :class:`omnigent.runtime.harnesses._executor_adapter.ExecutorAdapter` around a
-:class:`omnigent.inner.rovo_executor.RovoExecutor` configured from env vars the
-parent process sets before spawning. Mirrors the codex wrap
+:class:`omnigent.community.harnesses.rovo.inner.rovo_executor.RovoExecutor`
+configured from env vars the parent process sets before spawning. Mirrors the codex wrap
 (``codex_harness.py``); see that module for the v1 env-var config-flow rationale.
 
 Env vars read at startup:
@@ -33,7 +33,7 @@ import os
 from fastapi import FastAPI
 
 from omnigent.inner.executor import Executor
-from omnigent.inner.rovo_executor import RovoExecutor
+from omnigent.community.harnesses.rovo.inner.rovo_executor import RovoExecutor
 from omnigent.runtime.harnesses._executor_adapter import ExecutorAdapter
 
 _logger = logging.getLogger(__name__)

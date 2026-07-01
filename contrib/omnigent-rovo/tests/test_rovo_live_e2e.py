@@ -4,7 +4,7 @@ Skips unless the real ``acli`` CLI is installed AND
 ``OMNIGENT_RUN_ROVO_LIVE=1`` is set, so CI without the CLI (and normal local
 runs) stay green. Run it explicitly with::
 
-    OMNIGENT_RUN_ROVO_LIVE=1 pytest tests/inner/test_rovo_live_e2e.py
+    OMNIGENT_RUN_ROVO_LIVE=1 pytest contrib/omnigent-rovo/tests/test_rovo_live_e2e.py
 
 It drives a real ``acli rovodev acp`` session end-to-end and asserts a turn
 streams text and completes.
@@ -24,7 +24,7 @@ from omnigent.inner.executor import (
     ToolCallRequest,
     TurnComplete,
 )
-from omnigent.inner.rovo_executor import RovoExecutor
+from omnigent.community.harnesses.rovo.inner.rovo_executor import RovoExecutor
 
 pytestmark = [
     pytest.mark.skipif(
