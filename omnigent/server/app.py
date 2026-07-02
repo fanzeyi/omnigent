@@ -23,7 +23,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from omnigent._platform import resolve_repo_symlink
 from omnigent.errors import ErrorCode, OmnigentError
-from omnigent.native_coding_agents import (
+from omnigent.harness_plugins import (
     ANTIGRAVITY_NATIVE_CODING_AGENT,
     CLAUDE_NATIVE_CODING_AGENT,
     CODEX_NATIVE_CODING_AGENT,
@@ -58,6 +58,7 @@ from omnigent.server.performance_metrics import (
 from omnigent.server.routes.builtin_agents import create_builtin_agents_router
 from omnigent.server.routes.comments import create_comments_router
 from omnigent.server.routes.default_policies import create_default_policies_router
+from omnigent.server.routes.harnesses import create_harnesses_router
 from omnigent.server.routes.policy_registry import create_policy_registry_router
 from omnigent.server.routes.runner_tunnel import create_runner_tunnel_router
 from omnigent.server.routes.session_mcp_servers import create_session_mcp_servers_router
@@ -84,83 +85,15 @@ from omnigent.stores.policy_store import PolicyStore
 _logger = logging.getLogger(__name__)
 
 
-def _is_pep440_version(version: str) -> bool:
-    """Return whether *version* can be parsed as a PEP 440 version."""
-    from packaging.version import InvalidVersion, Version
-
-    try:
-        Version(version)
-    except InvalidVersion:
-        return False
-    return True
-
-
-def _metadata_omnigent_version() -> str:
-    """Return the omnigent version recorded in installed package metadata."""
-    from importlib.metadata import version as _pkg_version
-
-    return _pkg_version("omnigent")
-
-
-def _source_pyproject_version(start: Path | None = None) -> str | None:
-    """Return ``[project].version`` from a source checkout's ``pyproject.toml``."""
-    import tomllib
-
-    current = start or Path(__file__).resolve()
-    for parent in (current, *current.parents):
-        pyproject = parent / "pyproject.toml"
-        if not pyproject.is_file():
-            continue
-        try:
-            data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-        except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
-            _logger.warning(
-                "could not read %s for server version fallback (%s)",
-                pyproject,
-                exc,
-            )
-            return None
-        project = data.get("project")
-        if not isinstance(project, dict) or project.get("name") != "omnigent":
-            continue
-        version = project.get("version")
-        if not isinstance(version, str) or not version:
-            return None
-        if not _is_pep440_version(version):
-            _logger.warning(
-                "pyproject version %r from %s is not PEP 440",
-                version,
-                pyproject,
-            )
-            return None
-        return version
-    return None
-
-
 def _server_version() -> str:
     """Return the server version exposed to clients.
 
-    Source/editable installs can have placeholder package metadata such as
-    ``source``. Prefer the installed metadata when it is parseable, but fall
-    back to the source checkout's ``pyproject.toml`` version so local developer
-    servers still report a PEP 440 version.
+    Reads :data:`omnigent.version.VERSION`, the single source of truth shared
+    with the CLI and the host/runner hello frames.
     """
-    version = _metadata_omnigent_version()
-    if _is_pep440_version(version):
-        return version
-    fallback = _source_pyproject_version()
-    if fallback is not None:
-        _logger.info(
-            "installed omnigent version %r is not PEP 440; using pyproject version %s",
-            version,
-            fallback,
-        )
-        return fallback
-    _logger.warning(
-        "installed omnigent version %r is not PEP 440 and no pyproject fallback was found",
-        version,
-    )
-    return version
+    from omnigent.version import VERSION
+
+    return VERSION
 
 
 def _register_web_mimetypes() -> None:
@@ -182,13 +115,23 @@ def _register_web_mimetypes() -> None:
         (".map", "application/json"),
         (".wasm", "application/wasm"),
         (".svg", "image/svg+xml"),
+        # Python's mimetypes DB has no ``.webmanifest`` entry, so without this
+        # Starlette serves the PWA manifest as ``application/octet-stream`` and
+        # browsers silently refuse to install the app.
+        (".webmanifest", "application/manifest+json"),
     ):
         mimetypes.add_type(ctype, ext)
 
 
 _register_web_mimetypes()
 
-_WEB_UI_DIST = Path(__file__).parent / "static" / "web-ui"
+# Default: the SPA bundled into the installed wheel's package data. A deploy
+# that ships the SPA outside the wheel (e.g. as loose files in the app source
+# tree, to keep the wheel under a per-file size cap) can point here instead via
+# OMNIGENT_WEB_UI_DIST, without rebuilding or repackaging.
+_WEB_UI_DIST = Path(
+    os.environ.get("OMNIGENT_WEB_UI_DIST") or (Path(__file__).parent / "static" / "web-ui")
+)
 _WEB_UI_HTML_CACHE_CONTROL = "no-cache"
 _WEB_UI_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
 _WEB_UI_STATIC_CACHE_CONTROL = "public, max-age=3600"
@@ -1898,6 +1841,11 @@ def create_app(
         tags=["agents"],
     )
     app.include_router(
+        create_harnesses_router(auth_provider=auth_provider),
+        prefix="/v1",
+        tags=["harnesses"],
+    )
+    app.include_router(
         create_terminal_attach_router(
             auth_provider=auth_provider,
             permission_store=permission_store,
@@ -2428,6 +2376,11 @@ def _apply_web_ui_cache_headers(response: Response, path: str) -> Response:
     media_type = content_type.partition(";")[0].lower() if content_type is not None else None
     if path.startswith("assets/"):
         response.headers["Cache-Control"] = _WEB_UI_ASSET_CACHE_CONTROL
+    elif path in {"sw.js", "version.json"}:
+        # The service worker and the version sentinel it precaches must
+        # revalidate on every load, or the HTTP cache could mask a deploy for up
+        # to an hour and defeat prompt-to-reload.
+        response.headers["Cache-Control"] = _WEB_UI_HTML_CACHE_CONTROL
     elif media_type == "text/html" or path in {"", ".", "index.html"}:
         response.headers["Cache-Control"] = _WEB_UI_HTML_CACHE_CONTROL
     else:
