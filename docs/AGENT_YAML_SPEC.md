@@ -169,6 +169,71 @@ executor:
 CLI flags such as `--harness qwen` and `--model <id>` can override or supply
 missing executor values.
 
+## Per-harness startup overrides (`harness:` in `config.yaml`)
+
+The `harness:` key in `~/.omnigent/config.yaml` (user) or
+`.omnigent/config.yaml` (project, takes precedence) selects the default
+harness for `omnigent run` and can override the executable (`command`)
+and base launch args (`args`) for each harness. It accepts two forms:
+
+```yaml
+# Legacy scalar (deprecated, still honored — auto-migrated to the mapping on
+# the next config write):
+harness: claude-sdk
+
+# Mapping form — a default plus per-harness overrides (aliases canonicalized):
+harness:
+  default: claude-sdk          # default harness id for `omnigent run`
+  claude:                      # alias for claude-sdk; canonicalized on read
+    command: /usr/local/bin/claude
+    args: [--dangerously-skip-permissions]
+  codex:
+    args: [--config, approval_policy=on-request]
+```
+
+> **Note**: the ``claude`` alias canonicalizes to ``claude-sdk`` (the headless
+> SDK harness). A ``command`` override under ``claude:`` applies to the
+> ``claude-sdk`` slot, NOT to the ``omnigent claude`` native TUI launch — use
+> ``claude-native:`` for the native CLI: ``harness: {claude-native: {command: /path}}``.
+
+- `default` (optional str): default harness id for `omnigent run` when
+  `--harness` is absent. Absent → first-run defaults.
+- `command` (optional str): overrides the vendor CLI executable.
+- `args` (optional list[str]): base args for the harness launch; explicit
+  CLI pass-through args append after, so a per-invocation flag wins for
+  last-wins CLIs.
+
+**Precedence** (first non-empty wins): `OMNIGENT_<NAME>_PATH` env var >
+config `harness.<canonical>.command` > the built-in default. `args` follow
+the same precedence with config `args` as the base and CLI pass-through args
+appended. (The pre-existing `omnigent claude --command` flag is deprecated —
+it still works but warns, and sits above env in precedence as a transitional
+escape hatch; it will be removed in a future release. No other native command
+exposes a `--command` flag — override via env or config.)
+
+The env var is named `OMNIGENT_<NAME>_PATH` where `<NAME>` is the harness's
+base id (the `-native` suffix stripped, so `pi` and `pi-native` share
+`OMNIGENT_PI_PATH` — one var per binary). The legacy `HARNESS_<NAME>_PATH`
+name is still read as a deprecated fallback and will be removed in **v0.8.0**;
+set `OMNIGENT_<NAME>_PATH` going forward. When a legacy var is set, the CLI
+prints a deprecation notice to stderr at startup (one line per set var,
+interactive terminals only), and the runner logs a one-time-per-process
+warning when the legacy var actually provides the binary path.
+
+`command` applies to binary-launching harnesses via the shared
+`resolve_harness_command(...)`, keyed by canonical id →
+`OMNIGENT_<ID>_PATH`. Override is via env (`OMNIGENT_<NAME>_PATH`) or config
+(`harness.<id>.command`) — there is no `--command` CLI flag on native
+commands. (The pre-existing `omnigent claude --command` is deprecated and
+will be removed.) `args` applies to the native CLI harnesses only (the
+CLI-subprocess harnesses build a fixed subcommand argv). SDK-in-process
+harnesses (`claude-sdk`, `openai-agents`, `copilot`, `open-responses`) have
+no binary; a `command`/`args` there is warned and skipped.
+
+**Resume caveat**: `terminal_launch_args` are persisted at session creation
+and replayed on resume, so config `args` edits after creation don't apply to
+an existing session — mirrors the existing behavior for CLI pass-through args.
+
 ## Local OS access
 
 Declare `os_env` only for agents that need local file/shell tools.
