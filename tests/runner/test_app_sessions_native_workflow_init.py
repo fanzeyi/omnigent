@@ -1440,7 +1440,11 @@ async def test_session_stream_receives_events() -> None:
 @pytest.mark.asyncio
 async def test_session_stream_emits_heartbeat_on_idle() -> None:
     """The session stream emits an immediate and idle ``session.heartbeat``."""
-    runner_app_module = sys.modules[_session_labels_for_runner_spawn.__module__]
+    # ``_session_labels_for_runner_spawn`` was extracted into
+    # ``omnigent.runner.native.orchestration`` (PR #3148), but the heartbeat
+    # cadence and the stream loop that reads it still live in
+    # ``omnigent.runner.app``. Patch the app module directly.
+    runner_app_module = sys.modules["omnigent.runner.app"]
     original = runner_app_module._SESSION_STREAM_HEARTBEAT_S
     runner_app_module._SESSION_STREAM_HEARTBEAT_S = 0.05
     try:
