@@ -61,6 +61,7 @@
     "afterAllArtifactBuild": "build/afterAllArtifactBuild.js",
     "files": [
       "src/**/*",
+      "about/**/*",
       "setup/**/*",
       "server-selector-v2/**/*",
       "find/**/*",
