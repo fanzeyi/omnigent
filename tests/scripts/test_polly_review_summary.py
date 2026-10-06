@@ -112,6 +112,8 @@ def test_invalid_diff_fails_instead_of_claiming_zero_changes(tmp_path: Path) -> 
         _REVIEW.replace("Guards the regression.", ""),
         _REVIEW.replace("| Keep |", "| Yes |"),
         _REVIEW.replace("| Test / case |", "| File |"),
+        _REVIEW.replace("tests/test_parser.py::test_empty", "another_test")
+        + "\nMention only: tests/test_parser.py\n",
         _REVIEW.replace("### Scope", "### Other"),
         _REVIEW + "x" * 60000,
     ],
@@ -126,6 +128,7 @@ def test_invalid_diff_fails_instead_of_claiming_zero_changes(tmp_path: Path) -> 
         "missing-rationale",
         "unknown-verdict",
         "missing-table-header",
+        "mentioned-without-assessment",
         "missing-scope",
         "oversized",
     ],
@@ -138,11 +141,17 @@ def test_incomplete_or_oversized_reviews_are_rejected(review: str) -> None:
 
 
 def test_multi_file_review_rejects_missing_path_even_if_mentioned_in_prose() -> None:
-    review = _REVIEW.replace("tests/test_parser.py::test_empty", "test_empty").replace(
-        "### Tests\n", "### Tests\nThe tests are in tests/test_parser.py.\n"
+    review = (
+        _REVIEW.replace("tests/test_parser.py::test_empty", "test_empty")
+        .replace("### Tests\n", "### Tests\nThe tests are in tests/test_parser.py.\n")
+        .replace(
+            "### Scope\n",
+            "| tests/test_other.py::test_other | Other input | Unit | keep | Needed. |\n"
+            "### Scope\n",
+        )
     )
 
-    with pytest.raises(ValueError, match="unassessed test files"):
+    with pytest.raises(ValueError, match=r"unassessed test files: tests/test_parser\.py"):
         _HELPERS["compose_review"](
             review,
             {
@@ -152,15 +161,33 @@ def test_multi_file_review_rejects_missing_path_even_if_mentioned_in_prose() -> 
         )
 
 
-def test_single_changed_test_file_accepts_case_only_rows() -> None:
-    review = _REVIEW.replace("tests/test_parser.py::test_empty", "`test_empty`")
+@pytest.mark.parametrize("case", ["test_empty", "test_route[/v1/items]"])
+def test_single_changed_test_file_accepts_case_only_rows(case: str) -> None:
+    review = _REVIEW.replace("tests/test_parser.py::test_empty", f"`{case}`").replace(
+        "### Tests\n", "### Tests\nAll changed tests are in `tests/test_parser.py`.\n"
+    )
 
     result = _HELPERS["compose_review"](
         review, {"markdown": "Computed counts", "test_files": ["tests/test_parser.py"]}
     )
 
-    assert "`test_empty`" in result
+    assert f"`{case}`" in result
     assert "Test-by-test assessment" in result
+
+
+@pytest.mark.parametrize(
+    "other_case",
+    ["tests/test_unrelated.py::test_other", "[tests/test_unrelated.py::test_other](#test)"],
+)
+def test_single_changed_test_file_rejects_row_for_another_file(other_case: str) -> None:
+    review = _REVIEW.replace("tests/test_parser.py::test_empty", other_case).replace(
+        "### Tests\n", "### Tests\nChanged file: `tests/test_parser.py`.\n"
+    )
+
+    with pytest.raises(ValueError, match=r"unassessed test files: tests/test_parser\.py"):
+        _HELPERS["compose_review"](
+            review, {"markdown": "Computed counts", "test_files": ["tests/test_parser.py"]}
+        )
 
 
 def test_single_changed_test_file_still_requires_assessment_rows() -> None:
@@ -168,7 +195,7 @@ def test_single_changed_test_file_still_requires_assessment_rows() -> None:
         "| tests/test_parser.py::test_empty | Empty input | Unit | Keep |"
         " Guards the regression. |",
         "",
-    )
+    ).replace("### Tests\n", "### Tests\nAll changed tests are in `tests/test_parser.py`.\n")
 
     with pytest.raises(ValueError, match="unassessed test files"):
         _HELPERS["compose_review"](
