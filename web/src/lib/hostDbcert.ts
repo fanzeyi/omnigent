@@ -20,8 +20,9 @@ export const DBCERT_EXPIRY_COMMAND =
  * once on hosts missing any of these tools (e.g. macOS), so the banner can
  * point to Arca Companion instead of waiting out the timeout.
  */
-export const DBCERT_REFRESH_COMMAND =
-  'for c in dbcert setsid flock timeout; do command -v "$c" >/dev/null || exit 1; done; setsid flock -n "${TMPDIR:-/tmp}/omnigent-dbcert-refresh.lock" timeout 300 dbcert --caller-name omnigent </dev/null >/dev/null 2>&1 &';
+export const DBCERT_REFRESH_CHECK_COMMAND =
+  'for c in dbcert setsid flock timeout; do command -v "$c" >/dev/null || exit 1; done';
+export const DBCERT_REFRESH_COMMAND = `${DBCERT_REFRESH_CHECK_COMMAND}; setsid flock -n "\${TMPDIR:-/tmp}/omnigent-dbcert-refresh.lock" timeout 300 dbcert --caller-name omnigent </dev/null >/dev/null 2>&1 &`;
 
 /** How long a host-side sign-in may take: the `timeout` above. */
 export const HOST_DBCERT_REFRESH_MS = 300_000;
@@ -72,6 +73,11 @@ async function runHostShell(sessionId: string, command: string): Promise<string 
 export async function readHostDbcertExpiry(sessionId: string): Promise<number | null | undefined> {
   const stdout = await runHostShell(sessionId, DBCERT_EXPIRY_COMMAND);
   return stdout === null ? undefined : parseDbcertExpiry(stdout);
+}
+
+/** Whether the session host has the tools needed to start a dbcert sign-in. */
+export async function canStartHostDbcertRefresh(sessionId: string): Promise<boolean> {
+  return (await runHostShell(sessionId, DBCERT_REFRESH_CHECK_COMMAND)) !== null;
 }
 
 /** Start a dbcert sign-in on the host. Resolves whether it started. */
