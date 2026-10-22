@@ -84,6 +84,17 @@ and steers messages while the agent is busy.
   and attachments before provisioning. Follow-ups sent during startup are saved
   in order too. They run even if the creating browser closes; reopening shows
   each message once.
+- `arclet-dbcert`: desktop Arclet launches check laptop credentials first. A
+  missing or expired dbcert preserves the draft and shows a yellow refresh
+  banner instead of provisioning. Skip continues the current launch without
+  waiting for the check. Refresh is explicit; launch needs another submit after
+  renewal. States: valid, invalid, checking, skipped, refreshing, failed, and
+  CLI not installed.
+- `launch-action-required`: while a managed launch needs the user to do
+  something, such as an Arclet waiting for its owner's dbcert, the session's chat
+  transcript shows a yellow banner with the deployment's instructions. Provisioning
+  continues, and the banner leaves when the launch moves on. Dismissing hides
+  only that warning; a later one shows again.
 - `import-bundle`: Create custom agent → Import bundle installs a `.tar.gz` agent
   bundle and selects it. States: import in flight (Cancel and Create locked),
   rejected bundle, imported agent missing from the refreshed list, and hidden on
@@ -131,6 +142,17 @@ and steers messages while the agent is busy.
 
 **New-session composer** (landing page, or New session):
 
+- In the managed desktop app, choose **Arclet Sandbox** and submit a task with
+  missing or expired laptop credentials. Click **Refresh dbcert** in the yellow
+  banner, finish browser sign-in, then submit the preserved task again. Sending
+  alone must not open the browser, and renewal alone must not create a sandbox.
+  While **Checking laptop credentials…** is visible, **Skip** starts that launch
+  without waiting for verification or opening sign-in. Later launches check again.
+- On a deployment whose launches report that the user needs to act, such as
+  Databricks' managed Arclets, start a managed session whose launch needs you,
+  e.g. an Arclet whose owner's dbcert hasn't arrived. The session's chat
+  transcript keeps showing **Provisioning sandbox…** and adds a yellow banner
+  saying what to do. The terminal view doesn't show it.
 - Open the host chip, expand **Offline hosts (N)**, then **Show more**. Check the
   same menu on mobile and with a managed sandbox available. Offline rows remain
   disabled; a remembered offline selection still requires an explicit switch.
@@ -147,11 +169,20 @@ and steers messages while the agent is busy.
   unbound gateway with `sandbox.model_discovery`, or a provider hook): rows under
   the provider's label plus a "Default" row, for native and SDK agents.
   A failed listing shows its error and keeps Default launchable; a
-  harness the catalog cannot serve keeps its ordinary list. This is distinct
-  from a connected host's own catalog and from a bound (`inference_models`)
-  target. Covered by
-  `tests/e2e_ui/start_session/test_sandbox_gateway_models_without_binding.py`
-  and `tests/e2e_ui/start_session/test_sandbox_model_selection.py::test_optional_gateway_preview_without_a_host`.
+  harness the catalog cannot serve keeps its ordinary list. When the provider
+  reports `unsupported` (no model can serve the harness), the composer shows
+  its reason and submit stays disabled; opening the picker (including by
+  Ctrl+Shift+M) or its "Other..." harness submenu prefetches the shown harness
+  rows' previews, and a harness row
+  whose preview is `unsupported` renders disabled with that reason. Agent rows
+  (bundle and your own) are never grayed out, since they can switch brains or
+  bring their own provider; selecting one with no models still blocks submit,
+  and a blocked brain harness is named in the message. A failed or timed-out
+  preview never disables anything. This is distinct from a connected host's
+  own catalog and from a bound (`inference_models`) target. Covered by
+  `tests/e2e_ui/start_session/test_sandbox_gateway_models_without_binding.py`,
+  `tests/e2e_ui/start_session/test_sandbox_model_selection.py::test_optional_gateway_preview_without_a_host`
+  and `tests/e2e_ui/start_session/test_sandbox_model_selection.py::test_sandbox_harness_without_reachable_models_blocks_launch`.
 - Attach files or type `/` before the first send.
 - For a managed sandbox, submit a prompt and close the browser once the session
   URL appears, while provisioning is still in progress. Reopen that URL after
@@ -331,6 +362,7 @@ Other connection providers alone do not enable the managed MCP picker.
   `local`, disable/re-enable, and uninstall with stale cache. Manually refresh
   both composers after disabling the plugin and confirm its skill disappears.
   Catalog/process checks do not prove browser rendering or live-model invocation.
+
 - **`attachments`:**
   `tests/browser_ui/chat/test_composer_attachments.py::test_attach_supported_files_and_remove`,
   `tests/browser_ui/chat/test_composer_attachments.py::test_file_dropped_on_the_transcript_attaches`,
@@ -400,6 +432,24 @@ Other connection providers alone do not enable the managed MCP picker.
   cloud allocation and model output are local substitutes. Backend coverage in
   `tests/server/integration/test_managed_startup_inputs.py` checks native
   transcript ownership, bundle uploads, recovery, access revocation and deletion.
+- **`arclet-dbcert`, desktop new-session composer (own environment):**
+  `web/electron/e2e/desktop_dbcert_preflight.e2e.js` exercises the real desktop,
+  native bridge, CLI process, and local server with a fake dbcert executable and
+  machine policy. Follow `web/electron/e2e/README.md` for build and recording
+  prerequisites. It proves explicit refresh and launch, preserved input, skipping
+  a pending check, and skipped kubeconfig updates and existing-Arca sync; macOS
+  SSO and Companion transfer need a manual managed-desktop check. Component tests in
+  `web/src/shell/NewChatDialog.test.tsx` and
+  `web/src/components/DbcertBanner.test.tsx` cover leaving during a check, late
+  results after skipping, retry, dismissal, check errors, and older shells.
+- **`launch-action-required`, session chat transcript:**
+  `tests/browser_ui/chat/test_status_indicators.py::test_action_banner_follows_the_launch`
+  shows the snapshot's instructions in the banner and clears it when the stream
+  moves on. Component tests in `web/src/pages/ChatIndicators.test.tsx` cover
+  dismissals, and
+  `tests/server/integration/test_host_session_binding.py::test_managed_launch_action_required_reaches_snapshot_and_stream`
+  covers the server. Nothing in this repo emits the stage, so a live check needs
+  a deployment that does.
 - **`new-session-hotkey`:**
   `tests/e2e_ui/sessions/test_new_session_hotkey.py::test_new_session_hotkey_from_focused_composer`
 - **`import-bundle`:** no browser-level coverage; the web unit tests for the
@@ -413,6 +463,16 @@ Other connection providers alone do not enable the managed MCP picker.
 
 ## Gotchas
 
+- The Arclet dbcert preflight needs both the updated desktop shell and web UI,
+  with Databricks-internal features enabled for the managed server. Browsers,
+  older shells, other sandbox providers, and already-connected hosts do not
+  perform this laptop check. The existing session banner checks the host's
+  certificate instead; refreshing it does not prove new-session gating works.
+  Skip bypasses only this launch's check; it does not renew credentials or
+  guarantee that sandbox authentication will succeed.
+- The launch action banner appears only on deployments whose launch code
+  reports it; Omnigent's own sandbox providers never do. Its text comes from the
+  deployment, so check the wording there rather than in the web UI.
 - Session choices and server-stored project defaults are separate from local
   YAML and the shared-preference foundation; see
   [Preferences and config defaults](./preferences.md) for those boundaries.
