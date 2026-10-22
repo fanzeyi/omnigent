@@ -202,12 +202,14 @@ describe("DbcertBanner", () => {
     }
   });
 
-  it("retries a transient capability error at the short interval", async () => {
+  it("backs off transient capability errors after the short retry", async () => {
     delete (window as unknown as { omnigentDesktop?: unknown }).omnigentDesktop;
     vi.mocked(canStartHostDbcertRefresh).mockResolvedValue(undefined);
     renderBanner();
     await settle();
     const initialChecks = vi.mocked(canStartHostDbcertRefresh).mock.calls.length;
+    await settle(60_000);
+    expect(canStartHostDbcertRefresh).toHaveBeenCalledTimes(initialChecks + 1);
     await settle(60_000);
     expect(canStartHostDbcertRefresh).toHaveBeenCalledTimes(initialChecks + 1);
     await settle(60_000);

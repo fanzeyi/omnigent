@@ -16,6 +16,8 @@ const CHECK_INTERVAL_MS = 5 * 60_000;
 const EXPIRED_CHECK_INTERVAL_MS = 60_000;
 /** Maximum delay between probes for a host whose refresh tools are unavailable. */
 const CAPABILITY_RETRY_MAX_MS = 30 * 60_000;
+/** Maximum delay after a shell-proxy error, which may recover sooner. */
+const CAPABILITY_ERROR_RETRY_MAX_MS = 5 * 60_000;
 /** How often to re-read the cert while a refresh runs. */
 const REFRESH_POLL_MS = 4_000;
 /** How long Companion may take to copy a laptop refresh to the host. */
@@ -78,7 +80,8 @@ export function useHostDbcert(
     if (!sessionId || !target) return;
     let active = true;
     let retry: ReturnType<typeof setTimeout> | undefined;
-    let retryDelay = EXPIRED_CHECK_INTERVAL_MS;
+    let unavailableRetryDelay = EXPIRED_CHECK_INTERVAL_MS;
+    let errorRetryDelay = EXPIRED_CHECK_INTERVAL_MS;
     let waitingForVisibility = false;
     const waitUntilVisible = () => {
       if (waitingForVisibility) return;
@@ -96,12 +99,12 @@ export function useHostDbcert(
       void checkCapability();
     };
     const scheduleRetry = (confirmedUnavailable: boolean) => {
-      retry = setTimeout(
-        checkWhenVisible,
-        confirmedUnavailable ? retryDelay : EXPIRED_CHECK_INTERVAL_MS,
-      );
+      const delay = confirmedUnavailable ? unavailableRetryDelay : errorRetryDelay;
+      retry = setTimeout(checkWhenVisible, delay);
       if (confirmedUnavailable) {
-        retryDelay = Math.min(retryDelay * 2, CAPABILITY_RETRY_MAX_MS);
+        unavailableRetryDelay = Math.min(unavailableRetryDelay * 2, CAPABILITY_RETRY_MAX_MS);
+      } else {
+        errorRetryDelay = Math.min(errorRetryDelay * 2, CAPABILITY_ERROR_RETRY_MAX_MS);
       }
     };
     const checkCapability = async () => {
