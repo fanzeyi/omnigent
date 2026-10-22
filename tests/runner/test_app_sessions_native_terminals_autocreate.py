@@ -66,6 +66,7 @@ from omnigent.runner.app import (
     _publish_terminal_pending,
     _terminal_lookup_miss_log_state,
 )
+from omnigent.runner.native.orchestration import _build_pi_native_args
 from omnigent.runner.resource_registry import (
     CLAUDE_NATIVE_TERMINAL_ROLE,
     KIRO_NATIVE_TERMINAL_ROLE,
@@ -83,6 +84,8 @@ from tests.runner.conftest import (
     _ScriptedHarnessClient,
 )
 from tests.runner.helpers import NullServerClient
+
+_PI_SESSION_ID = "47f049b9d13df4db397c7f46859b825f"
 
 
 async def _no_op_forwarder(**kwargs: Any) -> None:
@@ -191,6 +194,7 @@ async def test_auto_create_pi_terminal_launches_required_terminal(
     import omnigent.harnesses.pi_native.bridge as pi_native_bridge
     import omnigent.harnesses.pi_native.credentials as pi_native_credentials
     import omnigent.harnesses.pi_native.main as pi_native
+    import omnigent.runner.app as runner_app_mod
 
     monkeypatch.setenv("RUNNER_SERVER_URL", "http://127.0.0.1:8000")
     if env_denylist is None:
@@ -223,6 +227,16 @@ async def test_auto_create_pi_terminal_launches_required_terminal(
         )
 
     monkeypatch.setattr("omnigent.runner.app._pi_native_launch_config", _fake_launch_config)
+    # TUI-typed turns skip the executor's refresh, so the runner owns one per launch.
+    supervised: list[tuple[Path, str]] = []
+
+    async def _supervise(bridge_dir: Path, url: str) -> None:
+        supervised.append((bridge_dir, url))
+
+    monkeypatch.setattr("omnigent.runner._entry._make_auth_token_factory", lambda: lambda: "tok")
+    monkeypatch.setattr(
+        "omnigent.harnesses.pi_native.auth_refresh.supervise_pi_auth_refresh", _supervise
+    )
 
     captured: dict[str, Any] = {}
 
@@ -270,12 +284,12 @@ async def test_auto_create_pi_terminal_launches_required_terminal(
         if instruction_spec.startswith("resolved"):
             agent_spec = ResolvedSpec(spec=agent_spec, workdir=tmp_path)
 
-    bridge_dir = pi_native_bridge.prepare_bridge_dir("47f049b9d13df4db397c7f46859b825f")
+    bridge_dir = pi_native_bridge.prepare_bridge_dir(_PI_SESSION_ID)
     instructions_path = bridge_dir / "agent_instructions.md"
     instructions_path.write_text("Stale role")
 
     await _auto_create_pi_terminal(
-        "47f049b9d13df4db397c7f46859b825f",
+        _PI_SESSION_ID,
         _FakeResourceRegistry(),  # type: ignore[arg-type]
         lambda _sid, evt: published.append(evt),
         server_client=NullServerClient(),  # type: ignore[arg-type]
@@ -298,6 +312,11 @@ async def test_auto_create_pi_terminal_launches_required_terminal(
     assert {"list_comments", "sys_session_list"} <= tool_names
     # The fresh terminal is surfaced on the live stream for the Terminal toggle.
     assert any(evt.get("type") == "session.resource.created" for evt in published)
+    task = runner_app_mod._AUTO_FORWARDER_TASKS.pop("47f049b9d13df4db397c7f46859b825f")
+    assert task.get_name() == "pi-auth-refresh-47f049b9d13df4db397c7f46859b825f"
+    await task
+    bridge_dir = Path(captured["spec"].env[pi_native_bridge.PI_NATIVE_CONFIG_ENV_VAR]).parent
+    assert supervised == [(bridge_dir, "http://127.0.0.1:8000")]
 
     args = captured["spec"].args
     assert args[-2:] == ["--append-system-prompt", "User addition"]
@@ -398,7 +417,7 @@ async def test_auto_create_pi_terminal_surfaces_credential_warning(
             return self._Response()
 
     await _auto_create_pi_terminal(
-        "47f049b9d13df4db397c7f46859b825f",
+        _PI_SESSION_ID,
         _FakeResourceRegistry(),  # type: ignore[arg-type]
         lambda _sid, _evt: None,
         server_client=_RecordingServerClient(),  # type: ignore[arg-type]
@@ -581,7 +600,7 @@ async def test_auto_create_pi_terminal_unmanaged_keeps_pinned_model(
             )
 
     await _auto_create_pi_terminal(
-        "47f049b9d13df4db397c7f46859b825f",
+        _PI_SESSION_ID,
         _FakeResourceRegistry(),  # type: ignore[arg-type]
         lambda _sid, _evt: None,
         server_client=NullServerClient(),  # type: ignore[arg-type]
@@ -646,7 +665,7 @@ async def test_auto_create_pi_terminal_unmanaged_refuses_slash_bearing_managed_m
             )
 
     await _auto_create_pi_terminal(
-        "47f049b9d13df4db397c7f46859b825f",
+        _PI_SESSION_ID,
         _FakeResourceRegistry(),  # type: ignore[arg-type]
         lambda _sid, _evt: None,
         server_client=NullServerClient(),  # type: ignore[arg-type]
@@ -734,7 +753,7 @@ async def test_auto_create_pi_terminal_outdated_cli_fails_with_upgrade_message(
 
     with pytest.raises(PiNativeCliOutdatedError) as excinfo:
         await _auto_create_pi_terminal(
-            "47f049b9d13df4db397c7f46859b825f",
+            _PI_SESSION_ID,
             captured["registry"],  # type: ignore[arg-type]
             lambda _sid, _evt: None,
             server_client=NullServerClient(),  # type: ignore[arg-type]
@@ -773,13 +792,118 @@ async def test_auto_create_pi_terminal_cli_version_at_floor_or_unknown_proceeds(
     captured = _pi_launch_test_stubs(tmp_path, monkeypatch, probed)
 
     await _auto_create_pi_terminal(
-        "47f049b9d13df4db397c7f46859b825f",
+        _PI_SESSION_ID,
         captured["registry"],  # type: ignore[arg-type]
         lambda _sid, _evt: None,
         server_client=NullServerClient(),  # type: ignore[arg-type]
     )
 
     assert captured["spec"].command == "pi"
+
+
+@pytest.mark.parametrize(
+    (
+        "project",
+        "global_file",
+        "user_args",
+        "mode",
+        "approve",
+        "authored",
+        "unreadable",
+        "expected",
+    ),
+    [
+        (True, True, [], "append", True, True, None, ["project", "authored"]),
+        (False, True, [], "append", True, True, None, ["global", "authored"]),
+        (False, False, [], "append", True, True, None, ["authored"]),
+        (True, True, [], "append", False, True, None, ["global", "authored"]),
+        (True, True, ["--no-approve"], "append", True, True, None, ["global", "authored"]),
+        (True, True, ["-na", "-a"], "append", True, True, None, ["project", "authored"]),
+        (
+            True,
+            True,
+            ["--append-system-prompt", "custom"],
+            "append",
+            True,
+            True,
+            None,
+            ["authored", "custom"],
+        ),
+        (True, True, ["--append-system-prompt", ""], "append", True, True, None, ["authored", ""]),
+        (True, True, ["--system-prompt", "User base"], "replace", True, True, None, [""]),
+        (True, True, [], "append", True, False, None, []),
+        (True, True, [], "append", True, True, "project", ["global", "authored"]),
+        (False, True, [], "append", True, True, "global", ["authored"]),
+    ],
+    ids=[
+        "project",
+        "global-fallback",
+        "missing",
+        "no-trust-override",
+        "no-approve",
+        "trust-last-wins",
+        "user-append",
+        "user-empty-append",
+        "replace-user-base",
+        "no-authored",
+        "project-unreadable",
+        "global-unreadable",
+    ],
+)
+def test_native_pi_preserves_append_discovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    project: bool,
+    global_file: bool,
+    user_args: list[str],
+    mode: str,
+    approve: bool,
+    authored: bool,
+    unreadable: str | None,
+    expected: list[str],
+) -> None:
+    workspace = tmp_path / "workspace with spaces"
+    project_config = workspace / ".pi"
+    agent_dir = tmp_path / "active-agent"
+    project_config.mkdir(parents=True)
+    agent_dir.mkdir()
+    paths = {
+        "project": project_config / "APPEND_SYSTEM.md",
+        "global": agent_dir / "APPEND_SYSTEM.md",
+        "authored": tmp_path / "authored.md",
+    }
+    for name, present in (("project", project), ("global", global_file), ("authored", authored)):
+        if present:
+            paths[name].write_text(name)
+    if unreadable is not None:
+        original_stat = Path.stat
+
+        def stat(path: Path, *args: Any, **kwargs: Any) -> Any:
+            if path == paths[unreadable]:
+                raise PermissionError("Parent directory is not searchable")
+            return original_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", stat)
+    args = _build_pi_native_args(
+        terminal_launch_args=user_args,
+        extension_path=tmp_path / "extension.js",
+        session_dir=tmp_path,
+        external_session_id=None,
+        instructions_path=paths["authored"] if authored else None,
+        context_files=False,
+        system_prompt_mode=mode,
+        workspace=workspace,
+        agent_dir=agent_dir,
+        approve=approve,
+    )
+    assert [
+        args[index + 1] for index, arg in enumerate(args) if arg == "--append-system-prompt"
+    ] == [str(paths[value].resolve()) if value in paths else value for value in expected]
+    if user_args:
+        assert args[-len(user_args) :] == user_args
+    if mode == "replace":
+        assert args[args.index("--system-prompt") + 1] == str(paths["authored"])
+        assert args[-2:] == ["--system-prompt", "User base"]
 
 
 async def _launch_pi_terminal_args(
@@ -849,7 +973,7 @@ async def _launch_pi_terminal_args(
             )
 
     await _auto_create_pi_terminal(
-        "47f049b9d13df4db397c7f46859b825f",
+        _PI_SESSION_ID,
         _FakeResourceRegistry(),  # type: ignore[arg-type]
         lambda _sid, _evt: None,
         server_client=NullServerClient(),  # type: ignore[arg-type]
@@ -889,9 +1013,26 @@ async def test_auto_create_pi_terminal_keeps_gateway_routing_for_slash_model(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import omnigent.harnesses.pi_native.bridge as pi_native_bridge
+
+    monkeypatch.setattr(pi_native_bridge, "_BRIDGE_ROOT", tmp_path / "pi-bridge")
+    agent_dir = pi_native_bridge.prepare_bridge_dir(_PI_SESSION_ID) / "pi-agent"
+    agent_dir.mkdir()
+    append_file = agent_dir / "APPEND_SYSTEM.md"
+    append_file.write_text("Active global prompt")
+    own_login = tmp_path / "pi-own-login"
+    own_login.mkdir()
+    (own_login / "APPEND_SYSTEM.md").write_text("Inactive global prompt")
     args = await _launch_pi_terminal_args(
-        tmp_path, monkeypatch, model_override="openai/gpt-4o-mini"
+        tmp_path,
+        monkeypatch,
+        model_override="openai/gpt-4o-mini",
+        agent_spec=AgentSpec(
+            spec_version=1, name="pi", executor=ExecutorSpec(), instructions="Authored role"
+        ),
     )
+    assert args[args.index("--append-system-prompt") + 1] == str(append_file)
+    assert str(own_login / "APPEND_SYSTEM.md") not in args
 
     assert "--provider" in args
     assert "--model" in args
