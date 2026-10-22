@@ -174,15 +174,29 @@ describe("DbcertBanner", () => {
     expect(screen.queryByText(/has expired/)).toBeNull();
   });
 
-  it("rechecks remote capability after the host shell becomes available", async () => {
+  it("backs off remote capability checks and resumes after a hidden tab returns", async () => {
     delete (window as unknown as { omnigentDesktop?: unknown }).omnigentDesktop;
     vi.mocked(canStartHostDbcertRefresh).mockResolvedValue(false);
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
     renderBanner();
     await settle();
+    const initialChecks = vi.mocked(canStartHostDbcertRefresh).mock.calls.length;
+    expect(initialChecks).toBeGreaterThan(0);
     expect(screen.queryByText(/has expired/)).toBeNull();
-    vi.mocked(canStartHostDbcertRefresh).mockResolvedValue(true);
     await settle(60_000);
+    expect(canStartHostDbcertRefresh).toHaveBeenCalledTimes(initialChecks + 1);
+    await settle(60_000);
+    expect(canStartHostDbcertRefresh).toHaveBeenCalledTimes(initialChecks + 1);
+    visibility.mockReturnValue("hidden");
+    await settle(60_000);
+    expect(canStartHostDbcertRefresh).toHaveBeenCalledTimes(initialChecks + 1);
+    vi.mocked(canStartHostDbcertRefresh).mockResolvedValue(true);
+    visibility.mockReturnValue("visible");
+    fireEvent(document, new Event("visibilitychange"));
+    await settle();
+    expect(canStartHostDbcertRefresh).toHaveBeenCalledTimes(initialChecks + 2);
     expect(screen.getByText(/has expired/)).toBeTruthy();
+    visibility.mockRestore();
   });
 
   it("reports a remote-host refresh failure without calling Electron", async () => {

@@ -12,16 +12,16 @@ import { authenticatedFetch } from "@/lib/identity";
 export const DBCERT_EXPIRY_COMMAND =
   'f="$HOME/.dbcert/creds.cert.pem"; if [ -r "$f" ]; then openssl x509 -enddate -noout -in "$f"; else echo none; fi';
 
+/** Exits 1 when the host lacks a tool required to start a bounded sign-in. */
+export const DBCERT_REFRESH_CHECK_COMMAND =
+  'for c in dbcert setsid flock timeout; do command -v "$c" >/dev/null || exit 1; done';
+
 /**
  * Starts `dbcert` on the host and returns at once, because its browser sign-in
  * outlasts the server's shell-proxy timeout. On Arca, dbcert opens the sign-in
  * on the laptop through Arca Companion. `flock` stops a second click from
- * starting a second sign-in, and `timeout` ends an abandoned one. Exits 1 at
- * once on hosts missing any of these tools (e.g. macOS), so the banner can
- * point to Arca Companion instead of waiting out the timeout.
+ * starting a second sign-in, and `timeout` ends an abandoned one.
  */
-export const DBCERT_REFRESH_CHECK_COMMAND =
-  'for c in dbcert setsid flock timeout; do command -v "$c" >/dev/null || exit 1; done';
 export const DBCERT_REFRESH_COMMAND = `${DBCERT_REFRESH_CHECK_COMMAND}; setsid flock -n "\${TMPDIR:-/tmp}/omnigent-dbcert-refresh.lock" timeout 300 dbcert --caller-name omnigent </dev/null >/dev/null 2>&1 &`;
 
 /** How long a host-side sign-in may take: the `timeout` above. */

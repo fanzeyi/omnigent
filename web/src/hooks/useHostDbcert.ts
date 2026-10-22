@@ -14,6 +14,8 @@ import { getDesktopFeatures, hasDbcertRefreshBridge, refreshDbcert } from "@/lib
 const CHECK_INTERVAL_MS = 5 * 60_000;
 /** How often to re-read an expired cert, so a refresh made elsewhere clears the banner. */
 const EXPIRED_CHECK_INTERVAL_MS = 60_000;
+/** Maximum delay between probes for a host whose refresh tools are unavailable. */
+const CAPABILITY_RETRY_MAX_MS = 30 * 60_000;
 /** How often to re-read the cert while a refresh runs. */
 const REFRESH_POLL_MS = 4_000;
 /** How long Companion may take to copy a laptop refresh to the host. */
@@ -76,6 +78,26 @@ export function useHostDbcert(
     if (!sessionId || !target) return;
     let active = true;
     let retry: ReturnType<typeof setTimeout> | undefined;
+    let retryDelay = EXPIRED_CHECK_INTERVAL_MS;
+    let waitingForVisibility = false;
+    const waitUntilVisible = () => {
+      if (waitingForVisibility) return;
+      waitingForVisibility = true;
+      document.addEventListener("visibilitychange", checkWhenVisible);
+    };
+    const checkWhenVisible = () => {
+      if (!active || document.visibilityState !== "visible") {
+        waitUntilVisible();
+        return;
+      }
+      waitingForVisibility = false;
+      document.removeEventListener("visibilitychange", checkWhenVisible);
+      void checkCapability();
+    };
+    const scheduleRetry = () => {
+      retry = setTimeout(checkWhenVisible, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, CAPABILITY_RETRY_MAX_MS);
+    };
     const checkCapability = async () => {
       const features = hasDbcertRefreshBridge() ? await getDesktopFeatures() : null;
       const onLaptop =
@@ -83,12 +105,13 @@ export function useHostDbcert(
       const available = onLaptop || (await canStartHostDbcertRefresh(sessionId));
       if (!active) return;
       setRefreshCapability(available ? { target, mode: onLaptop ? "laptop" : "host" } : null);
-      if (!available) retry = setTimeout(() => void checkCapability(), EXPIRED_CHECK_INTERVAL_MS);
+      if (!available) scheduleRetry();
     };
-    void checkCapability();
+    checkWhenVisible();
     return () => {
       active = false;
       clearTimeout(retry);
+      document.removeEventListener("visibilitychange", checkWhenVisible);
     };
   }, [sessionId, target]);
 
