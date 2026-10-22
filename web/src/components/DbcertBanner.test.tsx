@@ -178,25 +178,40 @@ describe("DbcertBanner", () => {
     delete (window as unknown as { omnigentDesktop?: unknown }).omnigentDesktop;
     vi.mocked(canStartHostDbcertRefresh).mockResolvedValue(false);
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    try {
+      renderBanner();
+      await settle();
+      const initialChecks = vi.mocked(canStartHostDbcertRefresh).mock.calls.length;
+      expect(initialChecks).toBeGreaterThan(0);
+      expect(screen.queryByText(/has expired/)).toBeNull();
+      await settle(60_000);
+      expect(canStartHostDbcertRefresh).toHaveBeenCalledTimes(initialChecks + 1);
+      await settle(60_000);
+      expect(canStartHostDbcertRefresh).toHaveBeenCalledTimes(initialChecks + 1);
+      visibility.mockReturnValue("hidden");
+      await settle(60_000);
+      expect(canStartHostDbcertRefresh).toHaveBeenCalledTimes(initialChecks + 1);
+      vi.mocked(canStartHostDbcertRefresh).mockResolvedValue(true);
+      visibility.mockReturnValue("visible");
+      fireEvent(document, new Event("visibilitychange"));
+      await settle();
+      expect(canStartHostDbcertRefresh).toHaveBeenCalledTimes(initialChecks + 2);
+      expect(screen.getByText(/has expired/)).toBeTruthy();
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
+  it("retries a transient capability error at the short interval", async () => {
+    delete (window as unknown as { omnigentDesktop?: unknown }).omnigentDesktop;
+    vi.mocked(canStartHostDbcertRefresh).mockResolvedValue(undefined);
     renderBanner();
     await settle();
     const initialChecks = vi.mocked(canStartHostDbcertRefresh).mock.calls.length;
-    expect(initialChecks).toBeGreaterThan(0);
-    expect(screen.queryByText(/has expired/)).toBeNull();
     await settle(60_000);
     expect(canStartHostDbcertRefresh).toHaveBeenCalledTimes(initialChecks + 1);
     await settle(60_000);
-    expect(canStartHostDbcertRefresh).toHaveBeenCalledTimes(initialChecks + 1);
-    visibility.mockReturnValue("hidden");
-    await settle(60_000);
-    expect(canStartHostDbcertRefresh).toHaveBeenCalledTimes(initialChecks + 1);
-    vi.mocked(canStartHostDbcertRefresh).mockResolvedValue(true);
-    visibility.mockReturnValue("visible");
-    fireEvent(document, new Event("visibilitychange"));
-    await settle();
     expect(canStartHostDbcertRefresh).toHaveBeenCalledTimes(initialChecks + 2);
-    expect(screen.getByText(/has expired/)).toBeTruthy();
-    visibility.mockRestore();
   });
 
   it("reports a remote-host refresh failure without calling Electron", async () => {
@@ -208,6 +223,8 @@ describe("DbcertBanner", () => {
     await settle();
     expect(startHostDbcertRefresh).toHaveBeenCalledWith("conv");
     expect(desktopRefresh).not.toHaveBeenCalled();
+    expect(screen.getByText(/run dbcert on the host/)).toBeTruthy();
+    expect(screen.queryByText(/Arca Companion/)).toBeNull();
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 

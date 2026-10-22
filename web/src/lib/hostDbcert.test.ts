@@ -72,6 +72,8 @@ describe("host shell calls", () => {
     expect(JSON.parse(String(init?.body)).command).toBe(DBCERT_REFRESH_CHECK_COMMAND);
     vi.mocked(authenticatedFetch).mockResolvedValueOnce(shellResult("", 1));
     expect(await canStartHostDbcertRefresh("s")).toBe(false);
+    vi.mocked(authenticatedFetch).mockResolvedValueOnce(new Response("{}", { status: 502 }));
+    expect(await canStartHostDbcertRefresh("s")).toBeUndefined();
   });
 
   it("starts dbcert in the background and reports whether the shell ran", async () => {

@@ -86,7 +86,8 @@ export function useHostDbcert(
       document.addEventListener("visibilitychange", checkWhenVisible);
     };
     const checkWhenVisible = () => {
-      if (!active || document.visibilityState !== "visible") {
+      if (!active) return;
+      if (document.visibilityState !== "visible") {
         waitUntilVisible();
         return;
       }
@@ -94,18 +95,28 @@ export function useHostDbcert(
       document.removeEventListener("visibilitychange", checkWhenVisible);
       void checkCapability();
     };
-    const scheduleRetry = () => {
-      retry = setTimeout(checkWhenVisible, retryDelay);
-      retryDelay = Math.min(retryDelay * 2, CAPABILITY_RETRY_MAX_MS);
+    const scheduleRetry = (confirmedUnavailable: boolean) => {
+      retry = setTimeout(
+        checkWhenVisible,
+        confirmedUnavailable ? retryDelay : EXPIRED_CHECK_INTERVAL_MS,
+      );
+      if (confirmedUnavailable) {
+        retryDelay = Math.min(retryDelay * 2, CAPABILITY_RETRY_MAX_MS);
+      }
     };
     const checkCapability = async () => {
       const features = hasDbcertRefreshBridge() ? await getDesktopFeatures() : null;
       const onLaptop =
         features?.databricksInternalFeatures === true && features.canRefreshDbcert === true;
-      const available = onLaptop || (await canStartHostDbcertRefresh(sessionId));
+      const hostCapability = onLaptop ? undefined : await canStartHostDbcertRefresh(sessionId);
       if (!active) return;
-      setRefreshCapability(available ? { target, mode: onLaptop ? "laptop" : "host" } : null);
-      if (!available) scheduleRetry();
+      const mode: "laptop" | "host" | null = onLaptop
+        ? "laptop"
+        : hostCapability === true
+          ? "host"
+          : null;
+      setRefreshCapability(mode ? { target, mode } : null);
+      if (!mode) scheduleRetry(hostCapability === false);
     };
     checkWhenVisible();
     return () => {
@@ -171,6 +182,7 @@ export function useHostDbcert(
 
   return {
     show: refreshMode !== null && expired && expiresAt !== dismissedExpiry,
+    refreshMode,
     hostName: host?.name ?? "",
     phase,
     refresh,

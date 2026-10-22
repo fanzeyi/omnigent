@@ -47,8 +47,13 @@ export function parseDbcertExpiry(stdout: string): number | null | undefined {
   return Date.UTC(year, month, day, hour, minute, second);
 }
 
-/** Run *command* in the session's environment; its stdout, or null on any failure. */
-async function runHostShell(sessionId: string, command: string): Promise<string | null> {
+interface HostShellResult {
+  stdout: string;
+  exitCode: number;
+}
+
+/** Run *command* in the session's environment, or return null when it cannot be asked. */
+async function runHostShell(sessionId: string, command: string): Promise<HostShellResult | null> {
   try {
     const res = await authenticatedFetch(
       `/v1/sessions/${encodeURIComponent(sessionId)}/resources/environments/default/shell`,
@@ -60,7 +65,9 @@ async function runHostShell(sessionId: string, command: string): Promise<string 
     );
     if (!res.ok) return null;
     const result = (await res.json()) as { stdout?: unknown; exit_code?: unknown };
-    return result.exit_code === 0 && typeof result.stdout === "string" ? result.stdout : null;
+    return typeof result.exit_code === "number" && typeof result.stdout === "string"
+      ? { stdout: result.stdout, exitCode: result.exit_code }
+      : null;
   } catch {
     return null;
   }
@@ -71,16 +78,17 @@ async function runHostShell(sessionId: string, command: string): Promise<string 
  * `undefined` when the host can't be asked (e.g. the session has no runner).
  */
 export async function readHostDbcertExpiry(sessionId: string): Promise<number | null | undefined> {
-  const stdout = await runHostShell(sessionId, DBCERT_EXPIRY_COMMAND);
-  return stdout === null ? undefined : parseDbcertExpiry(stdout);
+  const result = await runHostShell(sessionId, DBCERT_EXPIRY_COMMAND);
+  return result?.exitCode === 0 ? parseDbcertExpiry(result.stdout) : undefined;
 }
 
-/** Whether the session host has the tools needed to start a dbcert sign-in. */
-export async function canStartHostDbcertRefresh(sessionId: string): Promise<boolean> {
-  return (await runHostShell(sessionId, DBCERT_REFRESH_CHECK_COMMAND)) !== null;
+/** Whether the host has the tools to start sign-in, or undefined when it could not be asked. */
+export async function canStartHostDbcertRefresh(sessionId: string): Promise<boolean | undefined> {
+  const result = await runHostShell(sessionId, DBCERT_REFRESH_CHECK_COMMAND);
+  return result ? result.exitCode === 0 : undefined;
 }
 
 /** Start a dbcert sign-in on the host. Resolves whether it started. */
 export async function startHostDbcertRefresh(sessionId: string): Promise<boolean> {
-  return (await runHostShell(sessionId, DBCERT_REFRESH_COMMAND)) !== null;
+  return (await runHostShell(sessionId, DBCERT_REFRESH_COMMAND))?.exitCode === 0;
 }

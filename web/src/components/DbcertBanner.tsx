@@ -26,7 +26,9 @@ export function DbcertBanner({
       running={dbcert.phase === "running"}
       error={
         dbcert.phase === "failed"
-          ? "Couldn't refresh it from here. Click dbcert in the Arca Companion menu on your laptop."
+          ? dbcert.refreshMode === "host"
+            ? "Sign-in didn't complete. Try again, or run dbcert on the host."
+            : "Couldn't refresh it from here. Click dbcert in the Arca Companion menu on your laptop."
           : null
       }
       onRefresh={() => void dbcert.refresh()}
